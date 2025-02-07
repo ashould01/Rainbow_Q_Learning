@@ -28,7 +28,16 @@ logging.basicConfig(
     )
 logging.info('First Logging Learning')
 
-config_name = "LunarLander" # change argparse
+parser = argparse.ArgumentParser()
+parser.add_argument("-e", "--environment", required = True, choices = ['LunarLander'], help = "choose environment type")
+parser.add_argument("--mode", default = 'train', choices = ['train', 'test'], help = "choose train/test type")
+parser.add_argument("-m", "--model", required = True, choices = ['DQN'], help = 'choose model')
+parser.add_argument("-o", "--optimizer", required = True, choices = ['SGD', 'ADAM'], help = 'choose optimizer')
+
+args = parser.parse_args()
+
+config_name = args.environment
+mode = args.mode
 
 def dict2namespace(config):
     namespace = argparse.Namespace()
@@ -47,7 +56,6 @@ def load_config(config_name):
     return cfg
 
 cfg = load_config(config_name)
-mode = 'test' # change argparse
 
 if cfg.env.environment == "LunarLander-v3":
     env = gym.make(
@@ -57,25 +65,25 @@ if cfg.env.environment == "LunarLander-v3":
         enable_wind = cfg.env.enable_wind,
         render_mode = "rgb_array"
         )
-    
     # env = gym.wrappers.RecordEpisodeStatistics(env, buffer_length = cfg.train.n_episodes)
     
 else:
-    raise NotImplementedError
+    raise NotImplementedError # go to utils
 
 input_dim = cfg.env.obs_dim
 output_dim = cfg.env.action_dim
-model = DQNetwork(input_dim, output_dim) # change argparse
 
-def optimizer_setting(optim):
-    if optim == "SGD":
-        return torch.optim.SGD(model.parameters(), cfg.train.optimize.learning_rate)
-    elif optim == "ADAM":
-        return torch.optim.Adam(model.parameters(), cfg.train.optimize.learning_rate)
-    else:
-        raise NotImplementedError # go to utils
+if args.model == "DQN":
+    model = DQNetwork(input_dim, output_dim) 
+else:
+    raise NotImplementedError # go to utils
 
-optimizer = optimizer_setting(cfg.train.optimize.optimizer)
+if args.optimizer == "SGD":
+    optimizer = torch.optim.SGD(model.parameters(), cfg.train.optimize.learning_rate)
+elif args.optimizer == "ADAM":
+    optimizer = torch.optim.Adam(model.parameters(), cfg.train.optimize.learning_rate)
+else:
+    raise NotImplementedError # go to utils
 
 agent = Agent(
     env = env,
@@ -105,8 +113,6 @@ if mode == 'train':
         agent.decay_epsilon()
     writer.close()
     model_save = torch.save(model.state_dict(), os.path.join(save_path, f"model_weights_{datetime.now().strftime('%H-%M-%S')}.pth"))
-
-# def get_model()
     
 elif mode == 'test':
     
@@ -138,4 +144,4 @@ elif mode == 'test':
         raise NotImplementedError
             
 else:
-    raise ValueError('You take only train and test type.')
+    raise ValueError('You take only train and test mode.')
