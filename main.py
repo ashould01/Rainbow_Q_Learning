@@ -1,14 +1,34 @@
 import os
 import numpy as np
-import tqdm
+import torch
+from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
 import yaml
 import argparse
 import gymnasium as gym
-from gymnasium.wrappers import RecordVideo
+from gymnasium.wrappers import RecordVideo, RecordEpisodeStatistics
+import logging
+from datetime import datetime
 
 from train import Agent
+from models.DQN import DQNetwork
 
-config_name = "LunaLander"
+os.makedirs('logs/', exist_ok = True)
+save_path = f'logs/{datetime.now().strftime("%Y-%m-%d")}'
+os.makedirs(save_path, exist_ok = True)
+
+log_path = 'logs'
+log_file = os.path.join(log_path, 'log.log')
+
+logging.basicConfig(
+    level = logging.INFO,
+    format = '%(asctime)s %(levelname)s:%(message)s',
+    datefmt = '%m/%d/%Y %I:%M:%S %p',
+    handlers = [logging.FileHandler(log_file), logging.StreamHandler()]
+    )
+logging.info('First Logging Learning')
+
+config_name = "LunarLander" # change argparse
 
 def dict2namespace(config):
     namespace = argparse.Namespace()
@@ -27,53 +47,96 @@ def load_config(config_name):
     return cfg
 
 cfg = load_config(config_name)
-mode = 'train'
+mode = 'test' # change argparse
 
-if cfg.env.environment == "LunaLander-v3":
+if cfg.env.environment == "LunarLander-v3":
     env = gym.make(
-        env = cfg.env.environment,
+        id = cfg.env.environment,
         continuous = False,
         gravity = cfg.env.gravity,
         enable_wind = cfg.env.enable_wind,
-        render_mode = "rgb_array")
+        render_mode = "rgb_array"
+        )
+    
+    # env = gym.wrappers.RecordEpisodeStatistics(env, buffer_length = cfg.train.n_episodes)
     
 else:
     raise NotImplementedError
 
+input_dim = cfg.env.obs_dim
+output_dim = cfg.env.action_dim
+model = DQNetwork(input_dim, output_dim) # change argparse
+
+def optimizer_setting(optim):
+    if optim == "SGD":
+        return torch.optim.SGD(model.parameters(), cfg.train.optimize.learning_rate)
+    elif optim == "ADAM":
+        return torch.optim.Adam(model.parameters(), cfg.train.optimize.learning_rate)
+    else:
+        raise NotImplementedError # go to utils
+
+optimizer = optimizer_setting(cfg.train.optimize.optimizer)
+
 agent = Agent(
-    env=env,
+    env = env,
     model = model,
-    cfg = cfg
+    optimizer = optimizer,
+    cfg = cfg 
 )
 
 if mode == 'train':
-    for episode in tqdm(range(cfg.train.n_episodes)):
+    writer = SummaryWriter(log_dir = save_path)
+    
+    for episode in tqdm(range(cfg.train.n_episodes), desc = "Training"):
         obs, info = env.reset()
         done = False
-
+        
         # play one episode
         while not done:
             action = agent.get_action(obs)
             next_obs, reward, terminated, truncated, info = env.step(action)
             # update the agent
-            agent.update(obs, action, reward, terminated, next_obs)
-
+            agent.update(obs, action, reward, terminated, next_obs, writer, episode)
+            
             # update if the environment is done and the current obs
             done = terminated or truncated
             obs = next_obs
 
         agent.decay_epsilon()
-        
-if mode == 'test':
-    for i in range(10):
-        obs, info = env.reset()
-        env = RecordVideo(env, f"video/Trial{i}")
-        done = False
+    writer.close()
+    model_save = torch.save(model.state_dict(), os.path.join(save_path, f"model_weights_{datetime.now().strftime('%H-%M-%S')}.pth"))
 
-        # play one episode
-        while not done:
-            action = agent.get_action(state, test = True)
-            next_state, reward, done, _, _ = env_test.step(action)
-            state = next_state
-        agent.decay_epsilon()
+# def get_model()
     
+elif mode == 'test':
+    
+    
+    # Environment that crashes RecordEpisodeStatistics
+    
+    if cfg.env.environment == "LunarLander-v3":
+    
+        model = torch.load('logs/2025-02-07/model_weights_17-18-05.pth', map_location = torch.device('cuda:0')) # argparse
+        video_path = os.path.join(save_path, 'videos')
+        os.makedirs(video_path, exist_ok = True)
+
+        num_eval_episodes = 5
+
+        env = RecordVideo(env, video_folder = os.path.join(video_path), name_prefix="eval",
+                          episode_trigger=lambda x: True)
+
+        for _ in range(num_eval_episodes):
+            state, info = env.reset()
+            done = False
+
+            while not done:
+                action = agent.get_action(state, test = True)
+                next_state, reward, done, _, info = env.step(action)
+                state = next_state
+
+            env.close()
+        
+    else:
+        raise NotImplementedError
+            
+else:
+    raise ValueError('You take only train and test type.')
