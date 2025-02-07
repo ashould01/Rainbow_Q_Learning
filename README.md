@@ -3,3 +3,7 @@
 This is the practice code to implement Rainbow DQN. This code includes:
 
 - [x] DQN
+
+The environment contains:
+
+- [x] LunarLander

@@ -110,7 +110,6 @@ if mode == 'train':
     
 elif mode == 'test':
     
-    
     # Environment that crashes RecordEpisodeStatistics
     
     if cfg.env.environment == "LunarLander-v3":
